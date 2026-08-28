@@ -1024,9 +1024,12 @@ module messagepack_user
                     mpv%values(i)%obj = val_any
                 class default
                     successful = .false.
-                    deallocate(mpv)
                     this%error_message = 'internal error - unpack_array bad cast'
                 end select
+                if (.not. successful) then
+                    deallocate(mpv)
+                    return
+                end if
             end do
         end subroutine
 
@@ -1058,9 +1061,12 @@ module messagepack_user
                     mpv%keys(i)%obj = val_any
                 class default
                     successful = .false.
-                    deallocate(mpv)
                     this%error_message = 'internal error - unpack_map bad cast'
                 end select
+                if (.not. successful) then
+                    deallocate(mpv)
+                    return
+                end if
 
                 ! get value
                 call this%unpack_value(buffer(byteadvance+1:), tmp, &
@@ -1075,9 +1081,12 @@ module messagepack_user
                     mpv%values(i)%obj = val_any
                 class default
                     successful = .false.
-                    deallocate(mpv)
                     print *, "[Error: something went terribly wrong"
                 end select
+                if (.not. successful) then
+                    deallocate(mpv)
+                    return
+                end if
             end do
         end subroutine
 
@@ -1162,8 +1171,8 @@ module messagepack_user
                 byteadvance = byteadvance + length
             class default
                 successful = .false.
-                deallocate(mpv)
                 this%error_message = 'internal error - unpack_ext bad cast'
             end select
+            if (.not. successful) deallocate(mpv)
         end subroutine
 end module

@@ -24,12 +24,38 @@ They have to be. ngen builds this repository through its own listfile
 fails to find `messagepack.mod`. This directory holds the license and provenance so the
 third-party boundary is still recorded somewhere deliberate.
 
-They are vendored **unmodified**. Keep them that way: local edits are lost at the next re-vendor,
-and byte-identity is what makes the check below meaningful. Behavior changes belong in the calling
-code. Upstream's build files, tests, and example app are not vendored.
+They are vendored unmodified **except for the edits listed under "Local modifications"**. Keep it
+that way: local edits are lost at the next re-vendor, and near byte-identity is what makes the
+check below meaningful. Behavior changes belong in the calling code. Upstream's build files,
+tests, and example app are not vendored.
 
 `CMakeLists.txt` keeps them in their own `NOAHOWP_MESSAGEPACK_SOURCES` list rather than folding
 them into the model sources, so the boundary stays visible in the build too.
+
+## Local modifications
+
+`src/messagepack_user.f90` differs from upstream at four places: the `class default` arms of
+the `select type (mpv)` constructs in `unpack_array`, `unpack_map` (twice) and `unpack_ext`.
+Upstream has `deallocate(mpv)` inside each arm. Here the `deallocate` is moved to just after
+`end select`, guarded by `if (.not. successful)`, and the three sites inside `do` loops also
+`return`.
+
+Why: inside `select type (mpv)` the name `mpv` is the associate name, which the standard says
+"does not have the ALLOCATABLE or POINTER attributes" (Fortran 2023 §11.1.3.3; the same rule is
+in every standard since Fortran 2003, §16.4.1.5). Deallocating it is a constraint violation.
+Intel `ifx` rejects it with `error #6724: An allocate/deallocate object must have the
+ALLOCATABLE or POINTER attribute. [MPV]`, so the library does not build under Intel. gfortran
+does not diagnose it. After `end select` the name refers to the declared allocatable dummy
+again, where `deallocate` is conforming. The `return` matches the sibling error path a few lines
+above each site; without it the loop would continue and `select type` on the deallocated
+variable. All four arms are unreachable in practice (`mpv` is assigned a concrete type on the
+line before each `select type`), so no payload changes.
+
+The failure was first observed when an Intel compiler job was added to CI, and diagnosed and
+fixed in PR #135, which also has the full write-up. Upstream had no activity after the vendored
+commit when this was applied, so the edit was kept local. If it is re-vendored, re-apply or
+confirm upstream has fixed it. The `diff` below reports `DIFFERS: messagepack_user`; that is
+expected, and the diff hunks should be exactly these four.
 
 ## Verifying or updating
 
@@ -41,6 +67,6 @@ for f in byte_utilities messagepack_value messagepack_user messagepack; do
 done
 ```
 
-To update, repeat against the new commit, copy the four files across, refresh the commit SHA
-above, and re-run the test suite — the state payload layout depends on how this library packs
-values.
+To update, repeat against the new commit, copy the four files across, re-apply the local
+modifications above if upstream still needs them, refresh the commit SHA above, and re-run the
+test suite — the state payload layout depends on how this library packs values.
