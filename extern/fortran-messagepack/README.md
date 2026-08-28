@@ -34,13 +34,27 @@ them into the model sources, so the boundary stays visible in the build too.
 
 ## Local modifications
 
-`src/messagepack_user.f90` differs from upstream at four places: the `class default` arms of
-the `select type (mpv)` constructs in `unpack_array`, `unpack_map` (twice) and `unpack_ext`.
-Upstream has `deallocate(mpv)` inside each arm. Here the `deallocate` is moved to just after
-`end select`, guarded by `if (.not. successful)`, and the three sites inside `do` loops also
-`return`.
+`src/messagepack_user.f90` differs from upstream at five places.
 
-Why: inside `select type (mpv)` the name `mpv` is the associate name, which the standard says
+Four are the `class default` arms of the `select type (mpv)` constructs in `unpack_array`,
+`unpack_map` (twice) and `unpack_ext`. Upstream has `deallocate(mpv)` inside each arm. Here the
+`deallocate` is moved to just after `end select`, guarded by `if (.not. successful)`, and the
+three sites inside `do` loops also `return`.
+
+The fifth is one added line at the top of `unpack_value`: `byteadvance = 0` next to the
+`successful = .true.` default. Upstream returns from the two early error paths just below
+(`'buffer is empty'`, `'insufficient size'`) without ever assigning `byteadvance`, which is
+`intent(out)`, so its value on return is undefined. `unpack_buf` then compares that value against
+the buffer size. Whatever happens to be in that memory decides the outcome: a small leftover
+value skips the comparison harmlessly, while a large one sends the code into an error-reporting
+branch that writes into `error_message` — a deferred-length string of length zero at that point —
+and an internal write cannot grow such a string, so the program aborts with an end-of-record
+error. Which of those a given build sees depends on the compiler, optimisation level and what
+the stack held beforehand, which is why the malformed-payload tests can pass with one toolchain
+and abort with another. `check_size` in the same module already sets `byteadvance = 1` as its
+default; this just makes `unpack_value` do the same.
+
+Why the first four: inside `select type (mpv)` the name `mpv` is the associate name, which the standard says
 "does not have the ALLOCATABLE or POINTER attributes" (Fortran 2023 §11.1.3.3; the same rule is
 in every standard since Fortran 2003, §16.4.1.5). Deallocating it is a constraint violation.
 Intel `ifx` rejects it with `error #6724: An allocate/deallocate object must have the
@@ -55,7 +69,7 @@ The failure was first observed when an Intel compiler job was added to CI, and d
 fixed in PR #135, which also has the full write-up. Upstream had no activity after the vendored
 commit when this was applied, so the edit was kept local. If it is re-vendored, re-apply or
 confirm upstream has fixed it. The `diff` below reports `DIFFERS: messagepack_user`; that is
-expected, and the diff hunks should be exactly these four.
+expected, and the diff hunks should be exactly these five.
 
 ## Verifying or updating
 

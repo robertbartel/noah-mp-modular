@@ -740,6 +740,7 @@ module messagepack_user
 
             ! set default output values
             successful = .true.
+            byteadvance = 0
 
             ! need to have data available to read
             if (length == 0) then
